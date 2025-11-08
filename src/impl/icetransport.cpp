@@ -392,8 +392,22 @@ void IceTransport::LogCallback(juice_log_level_t level, const char *message) {
 
 #else // USE_NICE == 1
 
-unique_ptr<GMainLoop, void (*)(GMainLoop *)> IceTransport::MainLoop(nullptr, nullptr);
-std::thread IceTransport::MainLoopThread;
+IceTransport::MainLoopWrapper *IceTransport::MainLoop = nullptr;
+
+IceTransport::MainLoopWrapper::MainLoopWrapper()
+    : mMainLoop(g_main_loop_new(nullptr, FALSE), g_main_loop_unref) {
+	if (!mMainLoop)
+		throw std::runtime_error("Failed to create the glib main loop");
+
+	mThread = std::thread(g_main_loop_run, mMainLoop.get());
+}
+
+IceTransport::MainLoopWrapper::~MainLoopWrapper() {
+	g_main_loop_quit(mMainLoop.get());
+	mThread.join();
+}
+
+GMainLoop *IceTransport::MainLoopWrapper::get() const { return mMainLoop.get(); }
 
 void IceTransport::Init() {
 	g_log_set_handler("libnice", G_LOG_LEVEL_MASK, LogCallback, nullptr);
@@ -402,17 +416,12 @@ void IceTransport::Init() {
 		nice_debug_enable(false); // do not output STUN debug messages
 	}
 
-	MainLoop = decltype(MainLoop)(g_main_loop_new(nullptr, FALSE), g_main_loop_unref);
-	if (!MainLoop)
-		throw std::runtime_error("Failed to create the main loop");
-
-	MainLoopThread = std::thread(g_main_loop_run, MainLoop.get());
+	MainLoop = new MainLoopWrapper;
 }
 
 void IceTransport::Cleanup() {
-	g_main_loop_quit(MainLoop.get());
-	MainLoopThread.join();
-	MainLoop.reset();
+	delete MainLoop;
+	MainLoop = nullptr;
 }
 
 static void closeNiceAgentCallback(GObject *niceAgent, GAsyncResult *, gpointer) {
@@ -442,12 +451,13 @@ IceTransport::IceTransport(const Configuration &config, candidate_callback candi
 	// has been deprecated in this specification.
 	// libnice defaults to aggressive nomation therefore we change to regular nomination.
 	// See https://gitlab.freedesktop.org/libnice/libnice/-/merge_requests/125
-	NiceAgentOption flags = NICE_AGENT_OPTION_REGULAR_NOMINATION;
+	// Enable RFC 7675 ICE consent freshness support (requires libnice 0.1.19)
+	NiceAgentOption flags = static_cast<NiceAgentOption>(NICE_AGENT_OPTION_REGULAR_NOMINATION | NICE_AGENT_OPTION_CONSENT_FRESHNESS);
 
 	// Create agent
 	mNiceAgent = decltype(mNiceAgent)(
 	    nice_agent_new_full(
-	        g_main_loop_get_context(MainLoop.get()),
+	        g_main_loop_get_context(MainLoop->get()),
 	        NICE_COMPATIBILITY_RFC5245, // RFC 5245 was obsoleted by RFC 8445 but this should be OK
 	        flags),
 	    closeNiceAgent);
@@ -472,10 +482,7 @@ IceTransport::IceTransport(const Configuration &config, candidate_callback candi
 	// the characteristics of the associated data.
 	g_object_set(G_OBJECT(mNiceAgent.get()), "stun-pacing-timer", 25, nullptr);
 
-	// Enable RFC 7675 ICE consent freshness support (requires libnice 0.1.19)
 	g_object_set(G_OBJECT(mNiceAgent.get()), "keepalive-conncheck", TRUE, nullptr);
-	g_object_set(G_OBJECT(mNiceAgent.get()), "consent-freshness", TRUE, nullptr);
-
 	g_object_set(G_OBJECT(mNiceAgent.get()), "upnp", FALSE, nullptr);
 	g_object_set(G_OBJECT(mNiceAgent.get()), "upnp-timeout", 200, nullptr);
 
@@ -580,12 +587,13 @@ IceTransport::IceTransport(const Configuration &config, candidate_callback candi
 	nice_agent_set_port_range(mNiceAgent.get(), mStreamId, 1, config.portRangeBegin,
 	                          config.portRangeEnd);
 
-	nice_agent_attach_recv(mNiceAgent.get(), mStreamId, 1, g_main_loop_get_context(MainLoop.get()),
+	nice_agent_attach_recv(mNiceAgent.get(), mStreamId, 1, g_main_loop_get_context(MainLoop->get()),
 	                       RecvCallback, this);
 }
 
 void IceTransport::setIceAttributes([[maybe_unused]] string uFrag, [[maybe_unused]] string pwd) {
-	PLOG_WARNING << "Setting custom ICE attributes is not supported with libnice, please use libjuice";
+	PLOG_WARNING
+	    << "Setting custom ICE attributes is not supported with libnice, please use libjuice";
 }
 
 void IceTransport::addIceServer(IceServer server) {
@@ -647,7 +655,7 @@ void IceTransport::addIceServer(IceServer server) {
 
 IceTransport::~IceTransport() {
 	PLOG_DEBUG << "Destroying ICE transport";
-	nice_agent_attach_recv(mNiceAgent.get(), mStreamId, 1, g_main_loop_get_context(MainLoop.get()),
+	nice_agent_attach_recv(mNiceAgent.get(), mStreamId, 1, g_main_loop_get_context(MainLoop->get()),
 	                       NULL, NULL);
 	nice_agent_remove_stream(mNiceAgent.get(), mStreamId);
 	mNiceAgent.reset();

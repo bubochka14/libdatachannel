@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+#include "test.hpp"
 #include <rtc/rtc.h>
 
 #include <cstdio>
@@ -18,6 +19,8 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #else
 #include <unistd.h> // for sleep
 #endif
+
+#define BUFFER_SIZE 4096
 
 typedef struct {
 	rtcState state;
@@ -187,8 +190,24 @@ int test_capi_track_main() {
 		goto error;
 	}
 
+	// Test createOffer
+	char buffer[BUFFER_SIZE];
+	if (rtcCreateOffer(peer1->pc, buffer, BUFFER_SIZE) < 0) {
+		fprintf(stderr, "rtcCreateOffer failed\n");
+		goto error;
+	}
+	if (rtcGetLocalDescription(peer1->pc, buffer, BUFFER_SIZE) >= 0) {
+		fprintf(stderr, "rtcCreateOffer has set the local description\n");
+		goto error;
+	}
+
 	// Initiate the handshake
 	rtcSetLocalDescription(peer1->pc, NULL);
+
+	if (rtcGetLocalDescription(peer1->pc, buffer, BUFFER_SIZE) < 0) {
+		fprintf(stderr, "rtcGetLocalDescription failed\n");
+		goto error;
+	}
 
 	attempts = 10;
 	while ((!peer2->connected || !peer1->connected) && attempts--)
@@ -220,7 +239,8 @@ error:
 
 #include <stdexcept>
 
-void test_capi_track() {
+TestResult test_capi_track() {
 	if (test_capi_track_main())
-		throw std::runtime_error("Connection failed");
+		return TestResult(false, "Connection failed");
+	return TestResult(true);
 }

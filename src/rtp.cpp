@@ -130,34 +130,60 @@ void RtpExtensionHeader::setHeaderLength(uint16_t headerLength) {
 
 void RtpExtensionHeader::clearBody() { std::memset(getBody(), 0, getSize()); }
 
-void RtpExtensionHeader::writeOneByteHeader(size_t offset, uint8_t id, const byte *value,
-                                            size_t size) {
+size_t RtpExtensionHeader::writeOneByteHeader(size_t offset, uint8_t id, const byte *value,
+                                              size_t size) {
 	if ((id == 0) || (id > 14) || (size == 0) || (size > 16) || ((offset + 1 + size) > getSize()))
-		return;
+		return 0;
 	auto buf = getBody() + offset;
 	buf[0] = id << 4;
 	if (size != 1) {
 		buf[0] |= (uint8_t(size) - 1);
 	}
 	std::memcpy(buf + 1, value, size);
+	return 1 + size;
 }
 
-void RtpExtensionHeader::writeCurrentVideoOrientation(size_t offset, const uint8_t id,
-                                                      uint8_t value) {
+size_t RtpExtensionHeader::writeTwoByteHeader(size_t offset, uint8_t id, const byte *value,
+                                              size_t size) {
+	if ((id == 0) || (size > 255) || ((offset + 2 + size) > getSize()))
+		return 0;
+	auto buf = getBody() + offset;
+	buf[0] = id;
+	buf[1] = uint8_t(size);
+	std::memcpy(buf + 2, value, size);
+	return 2 + size;
+}
+
+size_t RtpExtensionHeader::writeCurrentVideoOrientation(bool twoByteHeader, size_t offset,
+                                                        const uint8_t id, uint8_t value) {
 	auto v = std::byte{value};
-	writeOneByteHeader(offset, id, &v, 1);
+	if (twoByteHeader) {
+		return writeTwoByteHeader(offset, id, &v, 1);
+	} else {
+		return writeOneByteHeader(offset, id, &v, 1);
+	}
+}
+size_t RtpExtensionHeader::writeHeader(bool twoByteHeader, size_t offset, uint8_t id,
+                                       const byte *value, size_t size) {
+	if (twoByteHeader) {
+		return writeTwoByteHeader(offset, id, value, size);
+	} else {
+		return writeOneByteHeader(offset, id, value, size);
+	}
 }
 
 SSRC RtcpReportBlock::getSSRC() const { return ntohl(_ssrc); }
 
-void RtcpReportBlock::preparePacket(SSRC in_ssrc, [[maybe_unused]] unsigned int packetsLost,
-                                    [[maybe_unused]] unsigned int totalPackets,
+void RtcpReportBlock::preparePacket(SSRC in_ssrc, uint8_t fraction,
+                                	uint32_t totalPacketsLost,
                                     uint16_t highestSeqNo, uint16_t seqNoCycles, uint32_t jitter,
                                     uint64_t lastSR_NTP, uint64_t lastSR_DELAY) {
 	setSeqNo(highestSeqNo, seqNoCycles);
 	setJitter(jitter);
 	setSSRC(in_ssrc);
 
+	setPacketsLost(fraction, totalPacketsLost);
+	
 	// Middle 32 bits of NTP Timestamp
 	// _lastReport = lastSR_NTP >> 16u;
 	setNTPOfSR(uint64_t(lastSR_NTP));
@@ -170,18 +196,18 @@ void RtcpReportBlock::preparePacket(SSRC in_ssrc, [[maybe_unused]] unsigned int 
 void RtcpReportBlock::setSSRC(SSRC in_ssrc) { _ssrc = htonl(in_ssrc); }
 
 void RtcpReportBlock::setPacketsLost(uint8_t fractionLost,
-                                     unsigned int packetsLostCount) {
+                                     uint32_t packetsLostCount) {
 	_fractionLostAndPacketsLost = htonl((uint32_t(fractionLost) << 24) | (packetsLostCount & 0xFFFFFF));
 }
 
 uint8_t RtcpReportBlock::getFractionLost() const {
 	// Fraction lost is expressed as 8-bit fixed point number
 	// In order to get actual lost percentage divide the result by 256
-	return _fractionLostAndPacketsLost & 0xFF;
+	return (uint8_t) ((ntohl(_fractionLostAndPacketsLost) & 0xFF00000) >> 24);
 }
 
-unsigned int RtcpReportBlock::getPacketsLostCount() const {
-	return ntohl(_fractionLostAndPacketsLost & 0xFFFFFF00);
+uint32_t RtcpReportBlock::getPacketsLostCount() const {
+	return ntohl(_fractionLostAndPacketsLost) & 0x00FFFFFF;
 }
 
 uint16_t RtcpReportBlock::seqNoCycles() const { return ntohs(_seqNoCycles); }
@@ -214,9 +240,8 @@ void RtcpReportBlock::log() const {
 	PLOG_VERBOSE << "RTCP report block: "
 	             << "ssrc="
 	             << ntohl(_ssrc)
-	             // TODO: Implement these reports
-	             //	<< ", fractionLost=" << fractionLost
-	             //	<< ", packetsLost=" << packetsLost
+	             	<< ", fractionLost=" << (uint32_t)getFractionLost()
+	             	<< ", packetsLost=" << getPacketsLostCount()
 	             << ", highestSeqNo=" << highestSeqNo() << ", seqNoCycles=" << seqNoCycles()
 	             << ", jitter=" << jitter() << ", lastSR=" << getNTPOfSR()
 	             << ", lastSRDelay=" << delaySinceSR();
@@ -563,7 +588,7 @@ unsigned int RtcpRemb::getNumSSRC() { return ntohl(_bitrate) >> 24u; }
 unsigned int RtcpRemb::getBitrate() {
 	uint32_t br = ntohl(_bitrate);
 	uint8_t exp = (br << 8u) >> 26u;
-	return (br & 0x3FFFF) * static_cast<unsigned int>(pow(exp, 2));
+	return (br & 0x3FFFF) * static_cast<unsigned int>(pow(2, exp));
 }
 
 unsigned int RtcpPli::Size() { return sizeof(RtcpFbHeader); }

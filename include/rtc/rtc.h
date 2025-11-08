@@ -132,6 +132,7 @@ typedef enum {
 	RTC_CODEC_PCMU = 129,
 	RTC_CODEC_PCMA = 130,
 	RTC_CODEC_AAC = 131,
+	RTC_CODEC_G722 = 132,
 } rtcCodec;
 
 typedef enum {
@@ -211,7 +212,7 @@ RTC_C_EXPORT int rtcSetIceStateChangeCallback(int pc, rtcIceStateChangeCallbackF
 RTC_C_EXPORT int rtcSetGatheringStateChangeCallback(int pc, rtcGatheringStateCallbackFunc cb);
 RTC_C_EXPORT int rtcSetSignalingStateChangeCallback(int pc, rtcSignalingStateCallbackFunc cb);
 
-RTC_C_EXPORT int rtcSetLocalDescription(int pc, const char *type);
+RTC_C_EXPORT int rtcSetLocalDescription(int pc, const char *type); // type may be NULL
 RTC_C_EXPORT int rtcSetRemoteDescription(int pc, const char *sdp, const char *type);
 RTC_C_EXPORT int rtcAddRemoteCandidate(int pc, const char *cand, const char *mid);
 
@@ -220,6 +221,10 @@ RTC_C_EXPORT int rtcGetRemoteDescription(int pc, char *buffer, int size);
 
 RTC_C_EXPORT int rtcGetLocalDescriptionType(int pc, char *buffer, int size);
 RTC_C_EXPORT int rtcGetRemoteDescriptionType(int pc, char *buffer, int size);
+
+// For specific use cases only
+RTC_C_EXPORT int rtcCreateOffer(int pc, char *buffer, int size);
+RTC_C_EXPORT int rtcCreateAnswer(int pc, char *buffer, int size);
 
 RTC_C_EXPORT int rtcGetLocalAddress(int pc, char *buffer, int size);
 RTC_C_EXPORT int rtcGetRemoteAddress(int pc, char *buffer, int size);
@@ -347,6 +352,14 @@ typedef struct {
 	uint8_t playoutDelayId;
 	uint16_t playoutDelayMin;
 	uint16_t playoutDelayMax;
+
+	uint8_t colorSpaceId;
+	uint8_t colorChromaSitingHorz;
+	uint8_t colorChromaSitingVert;
+	uint8_t colorRange;
+	uint8_t colorPrimaries;
+	uint8_t colorTransfer;
+	uint8_t colorMatrix;
 } rtcPacketizerInit;
 
 // Deprecated, do not use
@@ -377,6 +390,9 @@ RTC_C_EXPORT int rtcSetH265Packetizer(int tr, const rtcPacketizerInit *init);
 RTC_C_EXPORT int rtcSetAV1Packetizer(int tr, const rtcPacketizerInit *init);
 RTC_C_EXPORT int rtcSetOpusPacketizer(int tr, const rtcPacketizerInit *init);
 RTC_C_EXPORT int rtcSetAACPacketizer(int tr, const rtcPacketizerInit *init);
+RTC_C_EXPORT int rtcSetPCMUPacketizer(int tr, const rtcPacketizerInit *init);
+RTC_C_EXPORT int rtcSetPCMAPacketizer(int tr, const rtcPacketizerInit *init);
+RTC_C_EXPORT int rtcSetG722Packetizer(int tr, const rtcPacketizerInit *init);
 
 // Deprecated, do not use
 RTC_DEPRECATED static inline int
@@ -430,9 +446,6 @@ RTC_C_EXPORT int rtcSetTrackRtpTimestamp(int id, uint32_t timestamp);
 // Get timestamp of last RTCP SR, result is written to timestamp
 RTC_C_EXPORT int rtcGetLastTrackSenderReportTimestamp(int id, uint32_t *timestamp);
 
-// Set NeedsToReport flag in RtcpSrReporter handler identified by given track id
-RTC_C_EXPORT int rtcSetNeedsToSendRtcpSr(int id);
-
 // Get all available payload types for given codec and stores them in buffer, does nothing if
 // buffer is NULL
 int rtcGetTrackPayloadTypesForCodec(int tr, const char *ccodec, int *buffer, int size);
@@ -449,6 +462,9 @@ int rtcGetSsrcsForType(const char *mediaType, const char *sdp, uint32_t *buffer,
 // Set SSRC for given media type in given SDP
 int rtcSetSsrcForType(const char *mediaType, const char *sdp, char *buffer, const int bufferSize,
                       rtcSsrcForTypeInit *init);
+
+// For backward compatibility, do not use
+RTC_C_EXPORT RTC_DEPRECATED int rtcSetNeedsToSendRtcpSr(int id);
 
 #endif // RTC_ENABLE_MEDIA
 

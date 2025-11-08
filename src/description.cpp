@@ -216,6 +216,21 @@ void Description::hintType(Type type) {
 		mType = type;
 }
 
+void Description::addIceOption(string option) {
+	if (std::find(mIceOptions.begin(), mIceOptions.end(), option) == mIceOptions.end())
+		mIceOptions.emplace_back(std::move(option));
+}
+
+void Description::removeIceOption(const string &option) {
+	mIceOptions.erase(std::remove(mIceOptions.begin(), mIceOptions.end(), option),
+	                  mIceOptions.end());
+}
+
+void Description::setIceAttribute(string ufrag, string pwd) {
+	mIceUfrag = std::move(ufrag);
+	mIcePwd = std::move(pwd);
+}
+
 void Description::setFingerprint(CertificateFingerprint f) {
 	if (!f.isValid())
 		throw std::invalid_argument("Invalid " +
@@ -225,16 +240,6 @@ void Description::setFingerprint(CertificateFingerprint f) {
 	std::transform(f.value.begin(), f.value.end(), f.value.begin(),
 	               [](char c) { return char(std::toupper(c)); });
 	mFingerprint = std::move(f);
-}
-
-void Description::addIceOption(string option) {
-	if (std::find(mIceOptions.begin(), mIceOptions.end(), option) == mIceOptions.end())
-		mIceOptions.emplace_back(std::move(option));
-}
-
-void Description::removeIceOption(const string &option) {
-	mIceOptions.erase(std::remove(mIceOptions.begin(), mIceOptions.end(), option),
-	                  mIceOptions.end());
 }
 
 std::vector<string> Description::Entry::attributes() const { return mAttributes; }
@@ -1196,7 +1201,7 @@ Description::Audio::Audio(string mid, Direction dir)
 
 void Description::Audio::addAudioCodec(int payloadType, string codec, optional<string> profile) {
 	if (codec.find('/') == string::npos) {
-		if (codec == "PCMA" || codec == "PCMU")
+		if (codec == "PCMA" || codec == "PCMU" || codec == "G722")
 			codec += "/8000/1";
 		else
 			codec += "/48000/2";
@@ -1220,6 +1225,10 @@ void Description::Audio::addPCMACodec(int payloadType, optional<string> profile)
 
 void Description::Audio::addPCMUCodec(int payloadType, optional<string> profile) {
 	addAudioCodec(payloadType, "PCMU", profile);
+}
+
+void Description::Audio::addG722Codec(int payloadType, optional<string> profile) {
+	addAudioCodec(payloadType, "G722", profile);
 }
 
 void Description::Audio::addAACCodec(int payloadType, optional<string> profile) {

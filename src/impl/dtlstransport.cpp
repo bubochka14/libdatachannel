@@ -33,10 +33,12 @@ void DtlsTransport::enqueueRecv() {
 	if (mPendingRecvCount > 0)
 		return;
 
-	if (auto shared_this = weak_from_this().lock()) {
-		++mPendingRecvCount;
-		ThreadPool::Instance().enqueue(&DtlsTransport::doRecv, std::move(shared_this));
-	}
+	++mPendingRecvCount;
+
+	ThreadPool::Instance().enqueue([weak_this = weak_from_this()]() {
+		if (auto locked = weak_this.lock())
+			locked->doRecv();
+	});
 }
 
 #if USE_GNUTLS
@@ -761,7 +763,7 @@ DtlsTransport::DtlsTransport(shared_ptr<IceTransport> lower, certificate_ptr cer
 		                   CertificateCallback);
 		SSL_CTX_set_verify_depth(mCtx, 1);
 
-		openssl::check(SSL_CTX_set_cipher_list(mCtx, "ALL:!LOW:!EXP:!RC4:!MD5:@STRENGTH"),
+		openssl::check(SSL_CTX_set_cipher_list(mCtx, "ALL:!SHA256:!SHA384:!aPSK:!ECDSA+SHA1:!ADH:!LOW:!EXP:!MD5:!3DES:!SSLv3:!TLSv1"),
 		               "Failed to set SSL priorities");
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000
