@@ -58,11 +58,12 @@ private:
 
 // Generic audio RTP depacketizer
 template <uint32_t DEFAULT_CLOCK_RATE>
-class RTC_CPP_EXPORT AudioRtpDepacketizer final : public RtpDepacketizer {
+class AudioRtpDepacketizer final : public RtpDepacketizer {
 public:
 	inline static const uint32_t DefaultClockRate = DEFAULT_CLOCK_RATE;
 
 	AudioRtpDepacketizer(uint32_t clockRate = DefaultClockRate) : RtpDepacketizer(clockRate) {}
+	~AudioRtpDepacketizer() = default;
 };
 
 // Audio RTP depacketizers
